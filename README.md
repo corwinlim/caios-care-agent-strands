@@ -1,8 +1,8 @@
-# CAIOS Care Agent — Strands
+# CAIOS Care Agent — Strands + MCP
 
-A clean-room public demonstration of a **governed veterinary follow-up agent** built with the Strands Agents SDK.
+A clean-room demonstration of a **governed veterinary follow-up agent** using the Strands Agents SDK and a self-hosted Model Context Protocol surface for Alexa+ / Amazon Build, Ship, Shape.
 
-> Hackathon direction: reusable CAIOS capability + Amazon Build, Ship, Shape (Alexa+ / AWS Builder / Open Source).
+> Hackathon direction: Alexa+ primary track + AWS Builder + Open Source mini challenges.
 
 ## Problem
 
@@ -30,11 +30,27 @@ Hard rules:
 - every executed action is auditable;
 - synthetic demo data only.
 
+## Alexa+ MCP surface
+
+The repository exposes the governed workflow as a self-hosted MCP server over **Streamable HTTP** using the official Python SDK. The current SDK serves the 2025-11-25 protocol era required by the Amazon hackathon and later protocol revisions from the same server.
+
+The endpoint is:
+
+`POST /mcp`
+
+Start it with:
+
+```bash
+uvicorn src.mcp_server:app --host 0.0.0.0 --port 8000
+```
+
+If the MCP SDK is missing, the application fails closed with HTTP 503 instead of silently substituting a fake protocol implementation.
+
 ## Architecture
 
-Strands is the **orchestration adapter**. It can select and sequence bounded tools, but policy and authorization remain deterministic application authority.
+Strands is the **agent orchestration adapter**. MCP is the **external agent/tool transport**. Neither is the final authority for consequential actions: deterministic CAIOS policy performs safety classification and authorization.
 
-## Tools
+## Governed MCP tools
 
 - `get_pet_context`
 - `record_home_observation`
@@ -46,10 +62,12 @@ Strands is the **orchestration adapter**. It can select and sequence bounded too
 ## Demo scenarios
 
 ### Scenario A — governed follow-up
-A synthetic pet has a prior vet visit and a non-urgent owner update. The agent retrieves context, proposes a follow-up, requests owner approval, and records the outcome only after authorization.
+
+A synthetic pet has a prior vet visit and a non-urgent owner update. The system retrieves context, proposes a follow-up, requires owner approval, and records the outcome only after authorization.
 
 ### Scenario B — red-flag escalation
-The owner reports collapse/difficulty breathing. Deterministic safety produces `PROFESSIONAL_ESCALATION`; normal follow-up is stopped.
+
+The owner reports collapse or difficulty breathing. Deterministic safety produces `PROFESSIONAL_ESCALATION`; normal follow-up is stopped even if an owner previously approved an ordinary action.
 
 ## Run locally
 
@@ -61,9 +79,10 @@ source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 pytest -q
 python -m src.demo
+uvicorn src.mcp_server:app --host 127.0.0.1 --port 8000
 ```
 
-To run the actual Strands agent, configure AWS credentials for a supported model provider and use:
+To run the model-backed Strands agent, configure AWS credentials for a supported model provider and use:
 
 ```python
 from src.agent import build_agent
@@ -71,6 +90,20 @@ from src.agent import build_agent
 agent = build_agent()
 print(agent("Review Pika's home update and decide the safest next follow-up step."))
 ```
+
+## Verification status
+
+Verified locally:
+- deterministic action policy;
+- owner approval gating;
+- red-flag escalation override;
+- fail-closed unknown consequential action;
+- MCP module contract and ASGI export.
+
+Not yet claimed as verified:
+- live MCP client/server handshake in this execution environment;
+- model-backed Strands call against AWS;
+- deployed public endpoint.
 
 ## IP boundary
 
