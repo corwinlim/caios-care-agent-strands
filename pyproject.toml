@@ -1,0 +1,11 @@
+[project]
+name="caios-care-agent-strands"
+version="0.1.0"
+description="Clean-room Strands Agents demo for governed veterinary follow-up workflows."
+requires-python=">=3.10"
+dependencies=["strands-agents>=1.0.0"]
+[project.optional-dependencies]
+dev=["pytest>=8.0"]
+[tool.pytest.ini_options]
+pythonpath=["."]
+testpaths=["tests"]
