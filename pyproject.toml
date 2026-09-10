@@ -1,11 +1,17 @@
 [project]
 name="caios-care-agent-strands"
-version="0.1.0"
-description="Clean-room Strands Agents demo for governed veterinary follow-up workflows."
+version="0.2.0"
+description="Clean-room Strands + MCP demo for governed veterinary follow-up workflows."
 requires-python=">=3.10"
-dependencies=["strands-agents>=1.0.0"]
+dependencies=[
+  "strands-agents>=1.0.0",
+  "mcp[cli]>=2.0.0",
+  "uvicorn>=0.30.0",
+]
+
 [project.optional-dependencies]
 dev=["pytest>=8.0"]
+
 [tool.pytest.ini_options]
 pythonpath=["."]
 testpaths=["tests"]
