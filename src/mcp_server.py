@@ -36,9 +36,11 @@ def build_mcp_server():
     if MCPServer is None:
         raise RuntimeError("MCP SDK unavailable. Install project dependencies first.")
 
+    from .authorization import AuthorizationStore
     from .models import ActionClass, ActionProposal, Observation
     from .policy import authorize_proposal, classify_observation
 
+    authorization_store = AuthorizationStore()
     server = MCPServer("CAIOS Care Agent")
 
     @server.tool()
@@ -101,9 +103,16 @@ def build_mcp_server():
                 "action_class": final_class.value,
                 "next_step": "await_owner_approval",
             }
+
+        receipt = authorization_store.issue(
+            pet_id=pet_id,
+            action_type=action_type,
+            authorized_by="owner" if owner_approved else "policy",
+        )
         return {
             "authorized": True,
             "action_class": final_class.value,
+            "authorization_id": receipt.authorization_id,
             "next_step": "record_followup_outcome",
         }
 
@@ -111,14 +120,19 @@ def build_mcp_server():
     def record_followup_outcome(
         pet_id: str,
         action_type: str,
-        authorized_by: str,
+        authorization_id: str,
         record: str,
     ) -> dict:
-        """Record an outcome after upstream policy authorization."""
+        """Record an outcome only after consuming a matching one-time authorization receipt."""
+        receipt = authorization_store.consume(
+            authorization_id,
+            pet_id=pet_id,
+            action_type=action_type,
+        )
         return {
             "pet_id": pet_id,
             "action_type": action_type,
-            "authorized_by": authorized_by,
+            "authorized_by": receipt.authorized_by,
             "record": record,
             "executed": True,
         }
