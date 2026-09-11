@@ -173,6 +173,16 @@ class ServiceApp:
     """Small ASGI wrapper that exposes health/readiness while preserving MCP lifespan and routing."""
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope.get("type") == "lifespan":
+            async def send_with_readiness(message: dict) -> None:
+                await send(message)
+                if message.get("type") == "lifespan.startup.complete" and mcp_server is not None:
+                    snapshot = await readiness_snapshot(mcp_server, REQUIRED_TOOL_NAMES)
+                    print("CAIOS_MCP_READINESS " + json.dumps(snapshot, sort_keys=True), flush=True)
+
+            await mcp_app(scope, receive, send_with_readiness)
+            return
+
         if scope.get("type") != "http":
             await mcp_app(scope, receive, send)
             return
