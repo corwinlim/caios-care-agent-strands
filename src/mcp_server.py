@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from typing import Any
 
+from .protocol_selftest import run_protocol_selftest
 from .readiness import readiness_snapshot
 
 REQUIRED_TOOL_NAMES = {
@@ -13,6 +16,8 @@ REQUIRED_TOOL_NAMES = {
     "record_followup_outcome",
     "escalate_to_professional",
 }
+
+_background_tasks: set[asyncio.Task] = set()
 
 try:
     from mcp.server import MCPServer
@@ -45,6 +50,18 @@ async def _send_json(send: Any, status: int, payload: dict) -> None:
         "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
     })
     await send({"type": "http.response.body", "body": body})
+
+
+async def _log_protocol_selftest() -> None:
+    try:
+        snapshot = await run_protocol_selftest(int(os.environ.get("PORT", "10000")))
+        print("CAIOS_MCP_PROTOCOL_SELFTEST " + json.dumps(snapshot, sort_keys=True), flush=True)
+    except Exception as exc:
+        print(
+            "CAIOS_MCP_PROTOCOL_SELFTEST "
+            + json.dumps({"ok": False, "error_type": type(exc).__name__, "error": str(exc)[:300]}, sort_keys=True),
+            flush=True,
+        )
 
 
 def build_mcp_server():
@@ -179,6 +196,9 @@ class ServiceApp:
                 if message.get("type") == "lifespan.startup.complete" and mcp_server is not None:
                     snapshot = await readiness_snapshot(mcp_server, REQUIRED_TOOL_NAMES)
                     print("CAIOS_MCP_READINESS " + json.dumps(snapshot, sort_keys=True), flush=True)
+                    task = asyncio.create_task(_log_protocol_selftest())
+                    _background_tasks.add(task)
+                    task.add_done_callback(_background_tasks.discard)
 
             await mcp_app(scope, receive, send_with_readiness)
             return
