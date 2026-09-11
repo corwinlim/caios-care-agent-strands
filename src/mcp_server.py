@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import Any
+
+from .readiness import readiness_snapshot
 
 REQUIRED_TOOL_NAMES = {
     "get_pet_context",
@@ -21,15 +24,27 @@ class DependencyUnavailableApp:
     """Fail-closed ASGI app used only when the official MCP SDK is absent."""
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope.get("type") == "lifespan":
+            while True:
+                message = await receive()
+                if message["type"] == "lifespan.startup":
+                    await send({"type": "lifespan.startup.complete"})
+                elif message["type"] == "lifespan.shutdown":
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
         if scope.get("type") != "http":
             return
-        body = b'{"error":"mcp_sdk_unavailable"}'
-        await send({
-            "type": "http.response.start",
-            "status": 503,
-            "headers": [(b"content-type", b"application/json")],
-        })
-        await send({"type": "http.response.body", "body": body})
+        await _send_json(send, 503, {"error": "mcp_sdk_unavailable"})
+
+
+async def _send_json(send: Any, status: int, payload: dict) -> None:
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    await send({
+        "type": "http.response.start",
+        "status": status,
+        "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+    })
+    await send({"type": "http.response.body", "body": body})
 
 
 def build_mcp_server():
@@ -150,7 +165,41 @@ def build_mcp_server():
     return server
 
 
-if MCPServer is None:
-    app = DependencyUnavailableApp()
-else:
-    app = build_mcp_server().streamable_http_app()
+mcp_server = build_mcp_server() if MCPServer is not None else None
+mcp_app = mcp_server.streamable_http_app() if mcp_server is not None else DependencyUnavailableApp()
+
+
+class ServiceApp:
+    """Small ASGI wrapper that exposes health/readiness while preserving MCP lifespan and routing."""
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await mcp_app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path == "/health":
+            await _send_json(send, 200, {
+                "status": "ok",
+                "service": "caios-care-agent-strands",
+                "transport": "streamable-http",
+            })
+            return
+
+        if path == "/ready":
+            if mcp_server is None:
+                await _send_json(send, 503, {
+                    "ready": False,
+                    "registered_tools": [],
+                    "missing_tools": sorted(REQUIRED_TOOL_NAMES),
+                    "reason": "mcp_sdk_unavailable",
+                })
+                return
+            snapshot = await readiness_snapshot(mcp_server, REQUIRED_TOOL_NAMES)
+            await _send_json(send, 200 if snapshot["ready"] else 503, snapshot)
+            return
+
+        await mcp_app(scope, receive, send)
+
+
+app = ServiceApp()
