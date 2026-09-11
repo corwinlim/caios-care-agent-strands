@@ -156,11 +156,25 @@ def build_mcp_server():
         record: str,
     ) -> dict:
         """Record an outcome only after consuming a matching one-time authorization receipt."""
-        receipt = authorization_store.consume(
-            authorization_id,
-            pet_id=pet_id,
-            action_type=action_type,
-        )
+        try:
+            receipt = authorization_store.consume(
+                authorization_id,
+                pet_id=pet_id,
+                action_type=action_type,
+            )
+        except ValueError as exc:
+            reason = str(exc)
+            error = (
+                "authorization_receipt_mismatch"
+                if "mismatch" in reason
+                else "authorization_receipt_invalid_or_used"
+            )
+            return {
+                "pet_id": pet_id,
+                "action_type": action_type,
+                "executed": False,
+                "error": error,
+            }
         return {
             "pet_id": pet_id,
             "action_type": action_type,
