@@ -5,6 +5,7 @@ import json
 import os
 from typing import Any
 
+from .alexa_auth import AlexaServiceAuthApp
 from .protocol_selftest import run_protocol_selftest
 from .readiness import readiness_snapshot
 
@@ -246,4 +247,4 @@ class ServiceApp:
         await mcp_app(scope, receive, send)
 
 
-app = ServiceApp()
+app = AlexaServiceAuthApp(ServiceApp())
