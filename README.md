@@ -32,13 +32,22 @@ Hard rules:
 
 ## Alexa+ MCP surface
 
-The repository exposes the governed workflow as a self-hosted MCP server over **Streamable HTTP** using the official Python SDK. The current SDK serves the 2025-11-25 protocol era required by the Amazon hackathon and later protocol revisions from the same server.
+The repository exposes the governed workflow as a self-hosted MCP server over **Streamable HTTP** using the official Python SDK.
 
-The endpoint is:
+Public service:
 
-`POST /mcp`
+`https://caios-care-agent-strands.onrender.com`
 
-Start it with:
+MCP endpoint:
+
+`https://caios-care-agent-strands.onrender.com/mcp`
+
+Operational probes:
+
+- `GET /health`
+- `GET /ready`
+
+Start it locally with:
 
 ```bash
 uvicorn src.mcp_server:app --host 0.0.0.0 --port 8000
@@ -63,11 +72,11 @@ Strands is the **agent orchestration adapter**. MCP is the **external agent/tool
 
 ### Scenario A — governed follow-up
 
-A synthetic pet has a prior vet visit and a non-urgent owner update. The system retrieves context, proposes a follow-up, requires owner approval, and records the outcome only after authorization.
+A synthetic pet has a prior vet visit and a non-urgent owner update. The system retrieves context, proposes a follow-up, requires owner approval, issues a one-time authorization receipt, and records the outcome only after consuming the matching receipt.
 
 ### Scenario B — red-flag escalation
 
-The owner reports collapse or difficulty breathing. Deterministic safety produces `PROFESSIONAL_ESCALATION`; normal follow-up is stopped even if an owner previously approved an ordinary action.
+The owner reports collapse or difficulty breathing. Deterministic safety produces `PROFESSIONAL_ESCALATION`; normal follow-up is stopped even if an owner attempts to approve an ordinary action.
 
 ## Run locally
 
@@ -93,17 +102,39 @@ print(agent("Review Pika's home update and decide the safest next follow-up step
 
 ## Verification status
 
-Verified locally:
+### Verified
+
 - deterministic action policy;
 - owner approval gating;
 - red-flag escalation override;
-- fail-closed unknown consequential action;
-- MCP module contract and ASGI export.
+- unknown consequential action fails closed;
+- one-time authorization receipt binding and replay rejection;
+- public Render deployment;
+- Streamable HTTP MCP runtime startup;
+- readiness check confirms all six governed tools are registered;
+- live MCP 2025-11-25 wire handshake through the deployed Uvicorn stack;
+- MCP session assignment;
+- `tools/list` returns all six tools;
+- `tools/call` successfully invokes the safe synthetic `get_pet_context` tool.
 
-Not yet claimed as verified:
-- live MCP client/server handshake in this execution environment;
-- model-backed Strands call against AWS;
-- deployed public endpoint.
+Latest protocol self-test evidence from Render:
+
+```text
+CAIOS_MCP_PROTOCOL_SELFTEST {
+  "ok": true,
+  "protocol_version": "2025-11-25",
+  "session_assigned": true,
+  "tool_count": 6,
+  "safe_tool_call_ok": true
+}
+```
+
+### Not yet claimed as verified
+
+- Alexa+ invoking this MCP endpoint;
+- live AWS model-backed Strands reasoning;
+- live consequential approval/outcome tool sequence over MCP;
+- live red-flag escalation sequence over MCP.
 
 ## IP boundary
 
