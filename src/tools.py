@@ -4,10 +4,13 @@ try:
     from strands import tool
 except Exception:
     def tool(func): return func
+from .authorization import AuthorizationStore
 from .models import ActionClass, ActionOutcome, ActionProposal, Observation
 from .policy import authorize_proposal, classify_observation
+
 _CONTEXT={"pika-demo":{"pet_id":"pika-demo","name":"Pika","species":"dog","last_vet_visit":"2026-09-08","followup_due":True}}
 _OUTCOMES: List[Dict]=[]
+_AUTH=AuthorizationStore()
 
 @tool
 def get_pet_context(pet_id: str)->dict:
@@ -36,12 +39,14 @@ def request_owner_approval(pet_id: str, action_type: str, reason: str, owner_app
         return {"authorized":False,"action_class":final_class.value,"next_step":"escalate_to_professional"}
     if final_class is ActionClass.OWNER_APPROVAL and not owner_approved:
         return {"authorized":False,"action_class":final_class.value,"next_step":"await_owner_approval"}
-    return {"authorized":True,"action_class":final_class.value,"next_step":"record_followup_outcome"}
+    receipt=_AUTH.issue(pet_id=pet_id,action_type=action_type,authorized_by="owner" if owner_approved else "policy")
+    return {"authorized":True,"action_class":final_class.value,"authorization_id":receipt.authorization_id,"next_step":"record_followup_outcome"}
 
 @tool
-def record_followup_outcome(pet_id: str, action_type: str, action_class: str, authorized_by: str, record: str)->dict:
-    """Record the bounded outcome of an already authorized follow-up action."""
-    outcome=ActionOutcome(pet_id=pet_id,action_type=action_type,action_class=ActionClass(action_class),executed=True,authorized_by=authorized_by,record=record)
+def record_followup_outcome(pet_id: str, action_type: str, action_class: str, authorization_id: str, record: str)->dict:
+    """Record the bounded outcome only after consuming a matching one-time authorization receipt."""
+    receipt=_AUTH.consume(authorization_id,pet_id=pet_id,action_type=action_type)
+    outcome=ActionOutcome(pet_id=pet_id,action_type=action_type,action_class=ActionClass(action_class),executed=True,authorized_by=receipt.authorized_by,record=record)
     payload=asdict(outcome); _OUTCOMES.append(payload); return payload
 
 @tool
