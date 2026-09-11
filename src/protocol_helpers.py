@@ -20,4 +20,8 @@ def tool_result_payload(message: dict) -> dict:
 def tool_call_failed_closed(message: dict) -> bool:
     if "error" in message:
         return True
-    return bool(message.get("result", {}).get("isError"))
+    result = message.get("result", {})
+    if result.get("isError"):
+        return True
+    payload = tool_result_payload(message)
+    return payload.get("executed") is False and bool(payload.get("error"))
