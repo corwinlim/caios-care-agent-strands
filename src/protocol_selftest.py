@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import os
 from typing import Any
 
 import httpx
@@ -19,6 +21,30 @@ def extract_jsonrpc_payload(content_type: str, body: str) -> dict:
         if line.startswith("data:"):
             return json.loads(line.split(":", 1)[1].strip())
     raise ValueError("no JSON-RPC data event found")
+
+
+async def _service_token(client: httpx.AsyncClient, port: int) -> str | None:
+    client_id = os.environ.get("ALEXA_MCP_CLIENT_ID", "")
+    client_secret = os.environ.get("ALEXA_MCP_CLIENT_SECRET", "")
+    base_url = os.environ.get("ALEXA_MCP_BASE_URL", "").rstrip("/")
+    if not (client_id and client_secret and base_url):
+        return None
+
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    response = await client.post(
+        f"http://127.0.0.1:{port}/oauth/token",
+        headers={
+            "authorization": f"Basic {basic}",
+            "content-type": "application/x-www-form-urlencoded",
+        },
+        data={
+            "grant_type": "client_credentials",
+            "scope": "mcp:service",
+            "resource": f"{base_url}/mcp",
+        },
+    )
+    response.raise_for_status()
+    return response.json()["access_token"]
 
 
 async def _call_tool(
@@ -46,18 +72,23 @@ async def _call_tool(
 async def run_protocol_selftest(port: int) -> dict[str, Any]:
     """Exercise the deployed MCP wire path over localhost HTTP.
 
-    Covers protocol negotiation, tool discovery, a safe read-only tool call,
-    owner-approval receipt issuance/consumption/replay rejection, and red-flag
-    escalation that cannot be overridden by owner approval.
+    Covers service authentication when configured, protocol negotiation, tool
+    discovery, a safe read-only tool call, owner-approval receipt
+    issuance/consumption/replay rejection, and red-flag escalation that cannot
+    be overridden by owner approval.
     """
     await asyncio.sleep(0.75)
     url = f"http://127.0.0.1:{port}/mcp"
-    base_headers = {
-        "content-type": "application/json",
-        "accept": "application/json, text/event-stream",
-    }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
+        service_token = await _service_token(client, port)
+        base_headers = {
+            "content-type": "application/json",
+            "accept": "application/json, text/event-stream",
+        }
+        if service_token:
+            base_headers["authorization"] = f"Bearer {service_token}"
+
         init_response = await client.post(
             url,
             headers=base_headers,
@@ -212,6 +243,7 @@ async def run_protocol_selftest(port: int) -> dict[str, Any]:
             and scenario_a_ok
             and scenario_b_ok
         ),
+        "service_auth_enabled": bool(service_token),
         "protocol_version": init_payload.get("result", {}).get("protocolVersion"),
         "session_assigned": bool(session_id),
         "registered_tools": tool_names,
