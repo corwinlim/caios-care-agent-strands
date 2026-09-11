@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: caios-care-agent-strands
+    runtime: python
+    region: singapore
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -e .
+    startCommand: uvicorn src.mcp_server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /mcp
